@@ -1,5 +1,6 @@
 package com.darkracers.combinedefforts.interfaces;
 
+import com.darkracers.combinedefforts.multiblock.CoordTriplet;
 import com.darkracers.combinedefforts.multiblock.MultiblockControllerBase;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.tileentity.TileEntity;
@@ -21,7 +22,7 @@ public abstract class IMultiblockPart extends TileEntity{
 
     public abstract void onOrphaned(MultiblockControllerBase oldController, int oldControllerSize, int newControllerSize);
 
-    public abstract void MultiblockControllerBase createNewMultiblock();
+    public abstract MultiblockControllerBase createNewMultiblock();
 
     public abstract Class<? extends MultiblockControllerBase> getMultiblockControllerType();
 
@@ -58,6 +59,6 @@ public abstract class IMultiblockPart extends TileEntity{
     public abstract NBTTagCompound getMultiblockSaveData();
 
     public abstract void onMultiblockDataAssimilated();
-    }
+
 
 }
