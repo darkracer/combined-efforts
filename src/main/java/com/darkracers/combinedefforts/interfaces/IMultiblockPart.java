@@ -36,7 +36,7 @@ public abstract class IMultiblockPart extends TileEntity{
 
     public abstract void becomeMultiblockSaveDelegate();
 
-    public abstract void forfeitMultibockSaveDelegate();
+    public abstract void forfeitMultiblockSaveDelegate();
 
     public abstract boolean isMultiblockSaveDelegate();
 

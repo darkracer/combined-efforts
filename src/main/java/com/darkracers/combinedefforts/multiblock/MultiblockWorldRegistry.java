@@ -1,6 +1,7 @@
 package com.darkracers.combinedefforts.multiblock;
 
 import com.darkracers.combinedefforts.interfaces.IMultiblockPart;
+import net.minecraft.world.ChunkCoordIntPair;
 import net.minecraft.world.World;
 import net.minecraft.world.chunk.IChunkProvider;
 
@@ -134,7 +135,7 @@ public class MultiblockWorldRegistry {
                 }
                 else {
                     addDirtyController(newMaster);
-                    for (*MultiblockControllerBase controller: mergePool){
+                    for (MultiblockControllerBase controller: mergePool){
                         if (controller != newMaster){
                             newMaster.assimilate(controller);
                             addDeadController(controller);
@@ -142,8 +143,154 @@ public class MultiblockWorldRegistry {
                         }
                     }
                 }
+            }
+        }
 
+        if (dirtyControllers.size() > 0) {
+            Set<IMultiblockPart> newlyDetachedParts = null;
+            for (MultiblockControllerBase controller : dirtyControllers){
+                newlyDetachedParts = controller.checkForDisconnections();
+
+                if (!controller.isEmpty()){
+                    controller.recalculateMinMaxCoords();
+                    controller.checkIfMachineIsWhole();
+                }
+                else {
+                    addDeadController(controller);
+                }
+
+                if (newlyDetachedParts != null && newlyDetachedParts.size() > 0){
+                    detachedParts.addAll(newlyDetachedParts);
+                }
+            }
+
+            dirtyControllers.clear();
+        }
+
+        if (deadControllers.size() > 0){
+            for (MultiblockControllerBase controller : deadControllers){
+                if (!controller.isEmpty()){
+                    System.out.println("Found a non-empty controller. Forcing it to shed its blocks and die. This should never happen!)");
+                    detachedParts.addAll(controller.detachAllBlocks());
+                }
+
+                this.controllers.remove(controller);
+            }
+
+            deadControllers.clear();
+        }
+
+        for (IMultiblockPart part : detachedParts){
+            part.assertDetached();
+        }
+
+        addAllOrphanedPartsThreadsafe(detachedParts);
+        detachedParts.clear();
+    }
+
+    public void onPartAdded(IMultiblockPart part){
+        CoordTriplet worldLocation = part.getWorldLocation();
+
+        if (!worldObj.getChunkProvider().chunkExists(worldLocation.getChunkX(), worldLocation.getChunkZ())){
+            Set<IMultiblockPart> partSet;
+            long chunkHash = worldLocation.getChunkXZHash();
+            synchronized (partsAwaitingChunkLoadMutex){
+                if (!partsAwaitingChunkLoad.containsKey(chunkHash)){
+                    partSet = new HashSet<IMultiblockPart>();
+                    partsAwaitingChunkLoad.put(chunkHash, partSet);
+                }
+                else {
+                    partSet = partsAwaitingChunkLoad.get(chunkHash);
+                }
+
+                partSet.add(part);
+            }
+        }
+        else {
+            addOrphanedPartsThreadsafe(part);
+        }
+    }
+
+    public void onPartRemovedFromWorld(IMultiblockPart part){
+        CoordTriplet coord = part.getWorldLocation();
+        if (coord != null) {
+            long hash = coord.getChunkXZHash();
+
+            if (partsAwaitingChunkLoad.containsKey(hash)){
+                synchronized (partsAwaitingChunkLoadMutex) {
+                    if (partsAwaitingChunkLoad.containsKey(hash)){
+                        partsAwaitingChunkLoad.get(hash).remove(part);
+                        if (partsAwaitingChunkLoad.get(hash).size() <= 0){
+                            partsAwaitingChunkLoad.remove(hash);
+                        }
+                    }
+                }
+            }
+        }
+
+        detachedParts.remove(part);
+        if (orphanedParts.contains(part)){
+            synchronized (orphanedPartsMutex) {
+                orphanedParts.remove(part);
+            }
+        }
+
+        part.assertDetached();
+    }
+
+    public void onWorldUnloaded() {
+        controllers.clear();
+        deadControllers.clear();
+        dirtyControllers.clear();
+
+        detachedParts.clear();
+
+        synchronized (partsAwaitingChunkLoadMutex) {
+            partsAwaitingChunkLoad.clear();
+        }
+
+        synchronized (orphanedPartsMutex) {
+            orphanedParts.clear();
+        }
+
+        worldObj = null;
+    }
+
+    public void onChunkLoaded(int chunkX, int chunkZ) {
+        long chunkHash = ChunkCoordIntPair.chunkXZ2Int(chunkX, chunkZ);
+        if (partsAwaitingChunkLoad.containsKey(chunkHash)){
+            synchronized (partsAwaitingChunkLoadMutex) {
+                if (partsAwaitingChunkLoad.containsKey(chunkHash)){
+                    addAllOrphanedPartsThreadsafe(partsAwaitingChunkLoad.get(chunkHash));
+                    partsAwaitingChunkLoad.remove(chunkHash);
+                }
             }
         }
     }
+
+    public void addDeadController(MultiblockControllerBase deadController){
+        this.deadControllers.add(deadController);
+    }
+
+    public void addDirtyController(MultiblockControllerBase dirtyController) {
+        this.dirtyControllers.add(dirtyController);
+    }
+
+    public Set<MultiblockControllerBase> getControllers(){
+        return Collections.unmodifiableSet(controllers);
+    }
+
+    private void addOrphanedPartsThreadsafe(IMultiblockPart part){
+        synchronized (orphanedPartsMutex) {
+            orphanedParts.add(part);
+        }
+    }
+
+    private void addAllOrphanedPartsThreadsafe(Collection<? extends IMultiblockPart> parts){
+        synchronized (orphanedPartsMutex){
+            orphanedParts.addAll(parts);
+        }
+    }
+
+    private String clientOrServer() { return worldObj.isRemote ? "CLIEN" : "SERVER";}
 }
